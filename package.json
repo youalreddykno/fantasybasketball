@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "request": "*",
-	"cheerio": "*"
+	"cheerio": "*",
+	"pg": "*"
     
   }
 }
