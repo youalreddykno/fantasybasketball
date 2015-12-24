@@ -1,46 +1,64 @@
-﻿var pg = require('pg');
-var request = require("request");
+﻿//Load dependencies
 var cheerio = require("cheerio");
-const dayone = new Date(2015, 9, 27);
-const today = new Date();
-var total = Date.parse(today) - Date.parse(dayone);
-var numday = Math.ceil((total)  /  (1000  *  3600  *  24));
+var pg = require('pg');
+var request = require("request");
 
-job(1, 12);
+//Job class constructor
+function Job(){
+    this.dayNum = Math.ceil((new Date() - new Date(2015, 9, 27))  /  (1000  *  3600  *  24));
+    this.teams = [];
+}
 
-function job(start, end) {
+//Job member functions
+Job.prototype.extract = function extract(){
+    var job = this;
     var promises = [];
-    for (var i = start; i <= end; i++) {
+
+    for (var i = 1; i <= 12; i++) {
         promises.push(new Promise(function (resolve, reject) {
             var index = i;
-            request.get('http://games.espn.go.com/fba/boxscorequick?leagueId=273247&teamId=' + index + '&scoringPeriodId=' + numday + '&seasonId=2016&view=matchup', function (err, res) {
-                if (err) reject(false);
-                var html = res.body;
-                var $ = cheerio.load(html);
-                var team = {};
-                team.score = $("#tmTotalPtsRaw_" + index)[0].children[0].data;
-                team.games = $("#weekpace_" + index + "_0")[0].children[0].data;
-                team.avgscore = (team.score / team.games).toPrecision(4);
-                team.id = index;
-                resolve(team)
+            request.get('http://games.espn.go.com/fba/boxscorequick?leagueId=273247&teamId=' + index + '&scoringPeriodId=' + job.dayNum + '&seasonId=2016&view=matchup', function (err, res) {
+                if (err) reject(err);
+                else {
+                    var html = res.body;
+                    var $ = cheerio.load(html);
+                    var team = {};
+                    team.score = $("#tmTotalPoints_" + index + "_sp_" + job.dayNum)[0].children[0].data;
+                    team.games = $("#weekpace_" + index + "_0")[0].children[0].data;
+                    team.avgscore = (team.score / team.games).toPrecision(4);
+                    team.id = index;
+                    resolve(team);
+                }
             });
         }));
     }
     Promise.all(promises).then(function (values) {
-        values.forEach(function (v, i) {
-            pg.connect(process.env.DATABASE_URL, function (err, client, done) {
-                if (err) console.log(err);
-                console.log('Connected to postgres! Getting schemas...');
-                console.log('Attempting to update id: ' + v.id);
-                client
-                    .query("update fantasybasketball.stats set averageScore = '" + v.avgscore + "', totalscore= '" + v.score + "', gamesplayed = '" + v.games + "' where id ='" + v.id + "';")
-                    .on('row', function (row) {
-                    done();
-                    console.log('Successfully updated team with ID: ' + v.id);
-                })
-                    .on('error', function (e) { console.log(e) })
-                    .on('end', function (d) { console.log(d) });
-            });
-        });
+        job.teams = values;
+        job.load();
     });
+
 }
+Job.prototype.load = function load() {
+    var client = new Client(process.env.DATABASE_URL);
+    var job = this;
+    var queries = [];
+    
+    //create queries for each team
+    this.teams.forEach(function (v, i) {
+        queries.push(client.query("update fantasybasketball.stats set averageScore='" + v.avgscore + "', totalscore='" + v.score + "', gamesplayed='" + v.games + "' where id='" + v.id + "';"));
+        queries[i].on('end', function () { console.log('Updated team with id: ' + v.id); });
+    });
+    
+    //log event when query pool is empty
+    client.on('drain', function () { console.log("drained"); });
+    //log connection error event
+    client.on('error', function (error) { console.log(error); });
+
+    //initialize connection and execute queries defined above
+    client.connect();
+}
+
+//ENTRY POINT
+var Client = pg.Client;
+var job = new Job();
+job.extract();
