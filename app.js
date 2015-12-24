@@ -5,15 +5,20 @@ var request = require("request");
 
 //Job class constructor
 function Job(){
+    //Number of days since first day (10/27/15)
     this.dayNum = Math.ceil((new Date() - new Date(2015, 9, 27))  /  (1000  *  3600  *  24));
+    //Uninitialized teams list
     this.teams = [];
 }
 
 //Job member functions
 Job.prototype.extract = function extract(){
     var job = this;
+    
+    //Uninitialized async list
     var promises = [];
-
+    
+    //Get html for each team
     for (var i = 1; i <= 12; i++) {
         promises.push(new Promise(function (resolve, reject) {
             var index = i;
@@ -22,11 +27,15 @@ Job.prototype.extract = function extract(){
                 else {
                     var html = res.body;
                     var $ = cheerio.load(html);
+                    
+                    //Scrape html and compute values
                     var team = {};
                     team.score = $("#tmTotalPoints_" + index + "_sp_" + job.dayNum)[0].children[0].data;
                     team.games = $("#weekpace_" + index + "_0")[0].children[0].data;
                     team.avgscore = (team.score / team.games).toPrecision(4);
                     team.id = index;
+                    
+                    //Resolve async
                     resolve(team);
                 }
             });
@@ -39,8 +48,11 @@ Job.prototype.extract = function extract(){
 
 }
 Job.prototype.load = function load() {
+    //Instantiate db client    
+    var Client = pg.Client;
     var client = new Client(process.env.DATABASE_URL);
-    var job = this;
+    
+    //Uninitialized query list
     var queries = [];
     
     //create queries for each team
@@ -59,6 +71,5 @@ Job.prototype.load = function load() {
 }
 
 //ENTRY POINT
-var Client = pg.Client;
 var job = new Job();
 job.extract();
